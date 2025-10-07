@@ -325,6 +325,33 @@ app.delete("/games/:id", async (req, res) => {
   }
 });
 
+app.put("/games/:id", upload.array("images"), async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const { name, price, category, description } = req.body;
+    const categoryId = Number(category);
+
+    await db.query(
+      "UPDATE game SET title=?, price=?, description=?, category_id=? WHERE id=?",
+      [name, price, description, categoryId, gameId]
+    );
+
+    if (req.files) {
+      for (const file of req.files) {
+        await db.query(
+          "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
+          [gameId, file.filename]
+        );
+      }
+    }
+
+    res.json({ message: "แก้ไขเกมเรียบร้อย" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "แก้ไขเกมไม่สำเร็จ" });
+  }
+});
+
 // var ip = "0.0.0.0";
 // var ips = os.networkInterfaces();
 // Object.keys(ips).forEach(function (_interface) {
