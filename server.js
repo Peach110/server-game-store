@@ -154,11 +154,43 @@ app.get("/users", async (_req, res) => {
 });
 
 // 🔹 UPDATE PROFILE
+app.post("/update-profile", upload.single("profileImg"), async (req, res) => {
+  try {
+    const { userId, name } = req.body;
+    let profile_image_url = "";
+
+    if (req.file) profile_image_url = `/uploads/${req.file.filename}`;
+
+    let query = "";
+    const params = [];
+    if (profile_image_url) {
+      query =
+        "UPDATE user_account SET username = ?, profile_image_url = ? WHERE id = ?";
+      params.push(name, profile_image_url, userId);
+    } else {
+      query = "UPDATE user_account SET username = ? WHERE id = ?";
+      params.push(name, userId);
+    }
+
+    await db.query(query, params);
+
+    const [rows] = await db.query(
+      "SELECT id, username, profile_image_url, wallet_balance FROM user_account WHERE id = ?",
+      [userId]
+    );
+    const user = rows[0];
+
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 // POST /games - เพิ่มเกม
 app.post("/games", upload.array("images"), async (req, res) => {
   try {
     const { name, price, category, description } = req.body;
-
     if (!name || !price || !category || !description) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ" });
     }
@@ -176,7 +208,7 @@ app.post("/games", upload.array("images"), async (req, res) => {
       for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
-          [gameId, file.filename]
+          [gameId, '/uploads/' + file.filename] // ✅ เพิ่ม /uploads/ เพื่อให้ Angular ใช้ตรงกับ static folder
         );
       }
     }
@@ -284,25 +316,25 @@ app.post("/games", upload.array("images"), async (req, res) => {
 });
 
 
-// GET all games + รูป
+// GET /allgames - ดึงเกมทั้งหมดพร้อมรูป
 app.get("/allgames", async (_req, res) => {
   try {
     const [games] = await db.query(`
-      SELECT g.id, g.title as name, g.price, g.description, g.release_date as releaseDate, c.name as category
-      FROM game g JOIN category c ON g.category_id = c.id ORDER BY g.release_date DESC
+      SELECT g.id, g.title, g.price, g.description, g.release_date, c.id as category_id, c.name as category
+      FROM game g
+      JOIN category c ON g.category_id = c.id
+      ORDER BY g.release_date DESC
     `);
 
-    const gameIds = games.map((g) => g.id);
+    const gameIds = games.map(g => g.id);
     const [images] = await db.query(
       "SELECT * FROM game_image WHERE game_id IN (?)",
       [gameIds]
     );
 
-    const gamesWithImages = games.map((g) => ({
+    const gamesWithImages = games.map(g => ({
       ...g,
-      images: images
-        .filter((img) => img.game_id === g.id)
-        .map((i) => i.image_url),
+      images: images.filter(img => img.game_id === g.id).map(img => img.image_url)
     }));
 
     res.json(gamesWithImages);
@@ -346,7 +378,7 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
       for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
-          [gameId, '/uploads/' + file.filename] // ✅ แก้ตรงนี้
+          [gameId, '/uploads/' + file.filename] // ✅ เพิ่ม /uploads/
         );
       }
     }
@@ -357,6 +389,7 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
     res.status(500).json({ error: "แก้ไขเกมไม่สำเร็จ" });
   }
 });
+
 // var ip = "0.0.0.0";
 // var ips = os.networkInterfaces();
 // Object.keys(ips).forEach(function (_interface) {
