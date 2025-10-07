@@ -154,36 +154,37 @@ app.get("/users", async (_req, res) => {
 });
 
 // 🔹 UPDATE PROFILE
-app.post("/update-profile", upload.single("profileImg"), async (req, res) => {
+// POST /games - เพิ่มเกม
+app.post("/games", upload.array("images"), async (req, res) => {
   try {
-    const { userId, name } = req.body;
-    let profile_image_url = "";
+    const { name, price, category, description } = req.body;
 
-    if (req.file) profile_image_url = `/uploads/${req.file.filename}`;
-
-    let query = "";
-    const params = [];
-    if (profile_image_url) {
-      query =
-        "UPDATE user_account SET username = ?, profile_image_url = ? WHERE id = ?";
-      params.push(name, profile_image_url, userId);
-    } else {
-      query = "UPDATE user_account SET username = ? WHERE id = ?";
-      params.push(name, userId);
+    if (!name || !price || !category || !description) {
+      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ" });
     }
 
-    await db.query(query, params);
+    const categoryId = parseInt(category, 10);
+    if (isNaN(categoryId)) return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
 
-    const [rows] = await db.query(
-      "SELECT id, username, profile_image_url, wallet_balance FROM user_account WHERE id = ?",
-      [userId]
+    const [result] = await db.query(
+      "INSERT INTO game (title, price, description, category_id, release_date) VALUES (?, ?, ?, ?, NOW())",
+      [name, price, description, categoryId]
     );
-    const user = rows[0];
+    const gameId = result.insertId;
 
-    res.json({ success: true, user });
+    if (req.files) {
+      for (const file of req.files) {
+        await db.query(
+          "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
+          [gameId, file.filename]
+        );
+      }
+    }
+
+    res.json({ message: "เพิ่มเกมเรียบร้อย" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ error: "เพิ่มเกมไม่สำเร็จ" });
   }
 });
 
@@ -336,18 +337,15 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
     }
 
     const categoryId = parseInt(category, 10);
-    if (isNaN(categoryId)) {
-      return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
-    }
+    if (isNaN(categoryId)) return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
 
     await db.query(
       "UPDATE game SET title=?, price=?, description=?, category_id=? WHERE id=?",
       [name, price, description, categoryId, gameId]
     );
 
-    // ถ้ามีไฟล์ใหม่ให้เพิ่มรูป
     if (req.files) {
-      for (const file of req.files as Express.Multer.File[]) {
+      for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
           [gameId, file.filename]
