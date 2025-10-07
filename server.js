@@ -286,7 +286,7 @@ app.get("/games", async (_req, res) => {
   }
 });
 
-// POST เพิ่มเกม + หลายรูป
+// POST /games - เพิ่มเกม
 app.post("/games", upload.array("images"), async (req, res) => {
   try {
     const { name, price, category, description } = req.body;
@@ -307,7 +307,7 @@ app.post("/games", upload.array("images"), async (req, res) => {
       for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
-          [gameId, '/uploads/' + file.filename] // ✅ แก้ตรงนี้
+          [gameId, '/uploads/' + file.filename] // ✅ เพิ่ม /uploads/ เพื่อให้ Angular ใช้ตรงกับ static folder
         );
       }
     }
