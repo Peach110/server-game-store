@@ -251,40 +251,38 @@ app.get("/games", async (_req, res) => {
 });
 
 // POST เพิ่มเกม + หลายรูป
-app.post("/games", upload.array("images", 5), async (req, res) => {
+app.post("/games", upload.array("images"), async (req, res) => {
   try {
     const { name, price, category, description } = req.body;
+    if (!name || !price || !category || !description) {
+      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ" });
+    }
 
-    // หา category_id
-    const [cat] = await db.query("SELECT id FROM category WHERE name=?", [
-      category,
-    ]);
-    let category_id = cat.length
-      ? cat[0].id
-      : (await db.query("INSERT INTO category(name) VALUES(?)", [category]))[0]
-          .insertId;
+    const categoryId = parseInt(category, 10);
+    if (isNaN(categoryId)) return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
 
-    // insert เกมหลัก
     const [result] = await db.query(
-      "INSERT INTO game (title, price, category_id, description) VALUES (?,?,?,?)",
-      [name, price, category_id, description]
+      "INSERT INTO game (title, price, description, category_id, release_date) VALUES (?, ?, ?, ?, NOW())",
+      [name, price, description, categoryId]
     );
     const gameId = result.insertId;
 
-    // insert รูป
-    if (req.files && req.files.length) {
-      const images = req.files.map((f) => [gameId, `/uploads/${f.filename}`]);
-      await db.query("INSERT INTO game_image (game_id, image_url) VALUES ?", [
-        images,
-      ]);
+    if (req.files) {
+      for (const file of req.files) {
+        await db.query(
+          "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
+          [gameId, '/uploads/' + file.filename] // ✅ แก้ตรงนี้
+        );
+      }
     }
 
-    res.json({ message: "เพิ่มเกมสำเร็จ", id: gameId });
+    res.json({ message: "เพิ่มเกมเรียบร้อย" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "เพิ่มเกมไม่สำเร็จ" });
   }
 });
+
 
 // GET all games + รูป
 app.get("/allgames", async (_req, res) => {
@@ -348,7 +346,7 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
       for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
-          [gameId, file.filename]
+          [gameId, '/uploads/' + file.filename] // ✅ แก้ตรงนี้
         );
       }
     }
@@ -359,8 +357,6 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
     res.status(500).json({ error: "แก้ไขเกมไม่สำเร็จ" });
   }
 });
-
-
 // var ip = "0.0.0.0";
 // var ips = os.networkInterfaces();
 // Object.keys(ips).forEach(function (_interface) {
