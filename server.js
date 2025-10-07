@@ -12,13 +12,26 @@ const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// const PORT = process.env.PORT || 3000;
+const port = 3000;
 
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "../uploads"))); // serve static files
+
+// Serve static folder
+const uploadsDir = path.resolve(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
+
+// Multer config
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) =>
+    cb(null, uuidv4() + path.extname(file.originalname)),
+});
+const upload = multer({ storage, limits: { fileSize: 64 * 1024 * 1024 } });
 
 // ✅ ใช้ connection pool
 const db = mysql
@@ -43,17 +56,7 @@ const db = mysql
   }
 })();
 
-// Upload config
-const uploadsDir = path.resolve(__dirname, "../uploads");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) =>
-    cb(null, uuidv4() + path.extname(file.originalname)),
-});
-
-const upload = multer({ storage, limits: { fileSize: 64 * 1024 * 1024 } });
 
 // 🔹 REGISTER – สมัครสมาชิกพร้อมรูปภาพ
 app.post("/SignUp", upload.single("profile_image"), async (req, res) => {
@@ -188,6 +191,152 @@ app.get("/", (req, res) => {
   res.send("Hello Games-Store");
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Mydatabase API listening at http://localhost:${PORT}`);
+// GET Games - แยกใหม่ล่าสุด, ยอดฮิต, ทั้งหมด
+app.get("/games", async (_req, res) => {
+  try {
+    // เกมทั้งหมด
+    const [allGames] = await db.query(`
+      SELECT g.id, g.title, g.price, g.description, g.release_date, c.name as category
+      FROM game g
+      JOIN category c ON g.category_id = c.id
+      ORDER BY g.title ASC
+    `);
+
+    // เกมใหม่ล่าสุด 6 เกม
+    const [newGames] = await db.query(`
+      SELECT g.id, g.title, g.price, g.description, g.release_date, c.name as category
+      FROM game g
+      JOIN category c ON g.category_id = c.id
+      ORDER BY g.release_date DESC
+      LIMIT 6
+    `);
+
+    // เกมยอดฮิต 6 เกม
+    const [hotGames] = await db.query(`
+      SELECT g.id, g.title, g.price, g.description, g.release_date, c.name as category, 
+             SUM(p.quantity) as sold_count
+      FROM game g
+      JOIN category c ON g.category_id = c.id
+      JOIN purchase_detail p ON g.id = p.game_id
+      GROUP BY g.id
+      ORDER BY sold_count DESC
+      LIMIT 6
+    `);
+
+    // ดึงรูปของเกมทั้งหมด
+    const gameIds = [...newGames, ...hotGames, ...allGames].map((g) => g.id);
+    const [images] = await db.query(
+      "SELECT * FROM game_image WHERE game_id IN (?)",
+      [gameIds]
+    );
+
+    // map รูปภาพเข้ากับเกม
+    const addImages = (games) =>
+      games.map((g) => ({
+        ...g,
+        cover_image_url:
+          images.find((img) => img.game_id === g.id)?.image_url || null,
+      }));
+
+    res.json({
+      allGames: addImages(allGames),
+      newGames: addImages(newGames),
+      hotGames: addImages(hotGames),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการดึงข้อมูลเกม" });
+  }
 });
+
+// POST เพิ่มเกม + หลายรูป
+app.post("/games", upload.array("images", 5), async (req, res) => {
+  try {
+    const { name, price, category, description } = req.body;
+
+    // หา category_id
+    const [cat] = await db.query("SELECT id FROM category WHERE name=?", [
+      category,
+    ]);
+    let category_id = cat.length
+      ? cat[0].id
+      : (await db.query("INSERT INTO category(name) VALUES(?)", [category]))[0]
+          .insertId;
+
+    // insert เกมหลัก
+    const [result] = await db.query(
+      "INSERT INTO game (title, price, category_id, description) VALUES (?,?,?,?)",
+      [name, price, category_id, description]
+    );
+    const gameId = result.insertId;
+
+    // insert รูป
+    if (req.files && req.files.length) {
+      const images = req.files.map((f) => [gameId, `/uploads/${f.filename}`]);
+      await db.query("INSERT INTO game_image (game_id, image_url) VALUES ?", [
+        images,
+      ]);
+    }
+
+    res.json({ message: "เพิ่มเกมสำเร็จ", id: gameId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "เพิ่มเกมไม่สำเร็จ" });
+  }
+});
+
+// GET all games + รูป
+app.get("/allgames", async (_req, res) => {
+  try {
+    const [games] = await db.query(`
+      SELECT g.id, g.title as name, g.price, g.description, g.release_date as releaseDate, c.name as category
+      FROM game g JOIN category c ON g.category_id = c.id ORDER BY g.release_date DESC
+    `);
+
+    const gameIds = games.map((g) => g.id);
+    const [images] = await db.query(
+      "SELECT * FROM game_image WHERE game_id IN (?)",
+      [gameIds]
+    );
+
+    const gamesWithImages = games.map((g) => ({
+      ...g,
+      images: images
+        .filter((img) => img.game_id === g.id)
+        .map((i) => i.image_url),
+    }));
+
+    res.json(gamesWithImages);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "ดึงข้อมูลเกมไม่สำเร็จ" });
+  }
+});
+
+// 🔹 DELETE game
+app.delete("/games/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query("DELETE FROM game WHERE id=?", [id]);
+    res.json({ message: "ลบเกมสำเร็จ" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "ลบเกมไม่สำเร็จ" });
+  }
+});
+
+var ip = "0.0.0.0";
+var ips = os.networkInterfaces();
+Object.keys(ips).forEach(function (_interface) {
+  ips[_interface].forEach(function (_dev) {
+    if (_dev.family === "IPv4" && !_dev.internal) ip = _dev.address;
+  });
+});
+
+app.listen(port, () => {
+  console.log(`Game store API listening at http://${ip}:${port}`);
+});
+
+// app.listen(PORT, () => {
+//   console.log(`✅ Mydatabase API listening at http://localhost:${PORT}`);
+// });
