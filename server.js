@@ -325,19 +325,29 @@ app.delete("/games/:id", async (req, res) => {
   }
 });
 
+// PUT /games/:id - แก้ไขเกม
 app.put("/games/:id", upload.array("images"), async (req, res) => {
   try {
     const gameId = req.params.id;
     const { name, price, category, description } = req.body;
-    const categoryId = Number(category);
+
+    if (!name || !price || !category || !description) {
+      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ" });
+    }
+
+    const categoryId = parseInt(category, 10);
+    if (isNaN(categoryId)) {
+      return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
+    }
 
     await db.query(
       "UPDATE game SET title=?, price=?, description=?, category_id=? WHERE id=?",
       [name, price, description, categoryId, gameId]
     );
 
+    // ถ้ามีไฟล์ใหม่ให้เพิ่มรูป
     if (req.files) {
-      for (const file of req.files) {
+      for (const file of req.files as Express.Multer.File[]) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
           [gameId, file.filename]
@@ -351,6 +361,7 @@ app.put("/games/:id", upload.array("images"), async (req, res) => {
     res.status(500).json({ error: "แก้ไขเกมไม่สำเร็จ" });
   }
 });
+
 
 // var ip = "0.0.0.0";
 // var ips = os.networkInterfaces();
