@@ -191,6 +191,7 @@ app.post("/update-profile", upload.single("profileImg"), async (req, res) => {
 app.post("/games", upload.array("images"), async (req, res) => {
   try {
     const { name, price, category, description } = req.body;
+
     if (!name || !price || !category || !description) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ" });
     }
@@ -198,17 +199,21 @@ app.post("/games", upload.array("images"), async (req, res) => {
     const categoryId = parseInt(category, 10);
     if (isNaN(categoryId)) return res.status(400).json({ error: "Category ไม่ถูกต้อง" });
 
+    // กำหนด cover image จากไฟล์แรก (ถ้ามี)
+    let coverImage = req.files && req.files.length > 0 ? '/uploads/' + req.files[0].filename : null;
+
     const [result] = await db.query(
-      "INSERT INTO game (title, price, description, category_id, release_date) VALUES (?, ?, ?, ?, NOW())",
-      [name, price, description, categoryId]
+      "INSERT INTO game (title, price, description, category_id, release_date, cover_image_url) VALUES (?, ?, ?, ?, NOW(), ?)",
+      [name, price, description, categoryId, coverImage]
     );
     const gameId = result.insertId;
 
+    // บันทึกรูปอื่น ๆ
     if (req.files) {
       for (const file of req.files) {
         await db.query(
           "INSERT INTO game_image (game_id, image_url) VALUES (?, ?)",
-          [gameId, '/uploads/' + file.filename] // ✅ เพิ่ม /uploads/ เพื่อให้ Angular ใช้ตรงกับ static folder
+          [gameId, '/uploads/' + file.filename]
         );
       }
     }
@@ -219,7 +224,6 @@ app.post("/games", upload.array("images"), async (req, res) => {
     res.status(500).json({ error: "เพิ่มเกมไม่สำเร็จ" });
   }
 });
-
 app.get("/", (req, res) => {
   res.send("Hello Games-Store");
 });
