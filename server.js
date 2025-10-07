@@ -12,8 +12,8 @@ const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-// const PORT = process.env.PORT || 3000;
-const port = 3000;
+const PORT = process.env.PORT || 3000;
+// const port = 3000;
 
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(cors());
@@ -325,18 +325,18 @@ app.delete("/games/:id", async (req, res) => {
   }
 });
 
-var ip = "0.0.0.0";
-var ips = os.networkInterfaces();
-Object.keys(ips).forEach(function (_interface) {
-  ips[_interface].forEach(function (_dev) {
-    if (_dev.family === "IPv4" && !_dev.internal) ip = _dev.address;
-  });
-});
-
-app.listen(port, () => {
-  console.log(`Game store API listening at http://${ip}:${port}`);
-});
-
-// app.listen(PORT, () => {
-//   console.log(`✅ Mydatabase API listening at http://localhost:${PORT}`);
+// var ip = "0.0.0.0";
+// var ips = os.networkInterfaces();
+// Object.keys(ips).forEach(function (_interface) {
+//   ips[_interface].forEach(function (_dev) {
+//     if (_dev.family === "IPv4" && !_dev.internal) ip = _dev.address;
+//   });
 // });
+
+// app.listen(port, () => {
+//   console.log(`Game store API listening at http://${ip}:${port}`);
+// });
+
+app.listen(PORT, () => {
+  console.log(`✅ Mydatabase API listening at http://localhost:${PORT}`);
+});
